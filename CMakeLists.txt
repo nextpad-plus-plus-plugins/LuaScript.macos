@@ -47,3 +47,6 @@ set_target_properties(LuaScript PROPERTIES PREFIX "" SUFFIX ".dylib")
 target_link_options(LuaScript PRIVATE "-Wl,-current_version,${PROJECT_VERSION}")
 set(PLUGIN_INSTALL_DIR "$ENV{HOME}/Library/Application Support/Nextpad++/plugins/LuaScript")
 install(TARGETS LuaScript DESTINATION "${PLUGIN_INSTALL_DIR}")
+# Toolbar icons (32x32, light + dark) — host resolves <hint> / <hint>_dark.
+install(FILES assets/LuaScript.png assets/LuaScript_dark.png
+        DESTINATION "${PLUGIN_INSTALL_DIR}")

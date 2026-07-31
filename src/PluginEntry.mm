@@ -342,7 +342,10 @@ extern "C" NPP_EXPORT void beNotified(SCNotification *n) {
             ext.OnReady();
             break;
         case NPPN_TBMODIFICATION:
-            // No toolbar icon yet on macOS.
+            // Lua-logo toolbar button for Show Console (Windows: IDI_LUABMP).
+            // Host loads <plugindir>/LuaScript.png (+_dark) at 32x32.
+            npp(NPPM_ADDTOOLBARICON_FORDARKMODE,
+                (uintptr_t)funcItems[0]._cmdID, (intptr_t)"LuaScript.png");
             ext.OnToolBarModification();
             break;
         case NPPN_FILEBEFORECLOSE:
