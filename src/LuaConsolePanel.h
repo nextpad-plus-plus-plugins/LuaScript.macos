@@ -13,3 +13,5 @@ void luaConsoleBanner(void);
 /// Called whenever the panel's effective visibility changes (host hide/show,
 /// close button, dock/undock). Windows parity for DMN_CLOSE checkmark sync.
 void luaConsoleSetVisibilityCallback(void (^cb)(bool visible));
+/// Move keyboard focus into the console's input line (no-op if not shown).
+void luaConsoleFocusInput(void);

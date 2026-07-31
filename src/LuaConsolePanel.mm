@@ -33,6 +33,10 @@ static id      sKeyMonitor = nil;
 static std::vector<std::string> sHistory;
 static size_t  sHistoryPos = 0;
 static bool    sBannerShown = false;
+// Text written before the panel exists (startup-script errors, banner) is
+// held here and flushed on creation — the Windows console dialog exists from
+// setInfo on, ours is created lazily.
+static std::vector<std::pair<int, std::string>> sPending;
 
 static sptr_t outSend(unsigned int m, uptr_t w = 0, sptr_t l = 0) {
     return [sOut message:m wParam:w lParam:l];
@@ -44,7 +48,11 @@ static sptr_t inSend(unsigned int m, uptr_t w = 0, sptr_t l = 0) {
 // ── Sink ────────────────────────────────────────────────────────────────────
 
 static void appendStyled(const char *text, size_t len, int style) {
-    if (!sOut) { fprintf(stderr, "[LuaScript] %.*s", (int)len, text); return; }
+    if (!sOut) {
+        sPending.emplace_back(style, std::string(text, len));
+        fprintf(stderr, "[LuaScript] %.*s", (int)len, text);
+        return;
+    }
     outSend(SCI_SETREADONLY, 0);
     outSend(SCI_DOCUMENTEND);
     sptr_t start = outSend(SCI_GETLENGTH);
@@ -61,6 +69,7 @@ public:
     void writeText(size_t len, const char *s) override { appendStyled(s, len, 0); }
     void writeError(size_t len, const char *s) override { appendStyled(s, len, 39); }
     void clearText() override {
+        sPending.clear();
         if (!sOut) return;
         outSend(SCI_SETREADONLY, 0);
         outSend(SCI_CLEARALL);
@@ -71,8 +80,13 @@ static MacConsoleSink sSink;
 
 LuaConsoleSink *luaConsoleSink(void) { return &sSink; }
 
+void luaConsoleFocusInput(void) {
+    if (sIn && [sIn window])
+        [[sIn window] makeFirstResponder:sIn];
+}
+
 void luaConsoleBanner(void) {
-    if (sBannerShown || !sOut) return;
+    if (sBannerShown) return;
     sBannerShown = true;
     const char *msg = LUA_COPYRIGHT "\r\n\r\n";
     sSink.writeText(strlen(msg), msg);
@@ -239,6 +253,10 @@ NSView *luaConsoleCreate(const NppData *nppData, NppExtensionAPI *api) {
                 return ev;
         }
     }];
+
+    for (auto &p : sPending)
+        appendStyled(p.second.c_str(), p.second.size(), p.first);
+    sPending.clear();
 
     api->setConsoleSink(&sSink);
     api->setConsolePanes((__bridge GUI::WindowID)sOut, (__bridge GUI::WindowID)sIn);
