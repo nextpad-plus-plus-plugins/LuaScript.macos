@@ -16,6 +16,7 @@ file(GLOB LUA_SOURCES ${CMAKE_SOURCE_DIR}/src/lua/src/*.c)
 
 add_library(LuaScript SHARED
     src/PluginEntry.mm
+    src/LuaConsolePanel.mm
     src/GUIMac.mm
     src/NppExtensionAPI.mm
     src/SciTE/LuaExtension.cpp

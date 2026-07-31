@@ -21,6 +21,7 @@ extern "C" {
 
 #include "NppExtensionAPI.h"
 #include "LuaExtension.h"
+#include "LuaConsolePanel.h"
 
 // Engine host bridge (phase 2). Console sink arrives with phase 3 — until
 // then Trace output falls back to stderr inside NppExtensionAPI.
@@ -52,7 +53,34 @@ static void notImplemented(const char *what) {
 //  Menu commands (stubs — phases 3-5 wire the real implementations)
 // ═══════════════════════════════════════════════════════════════════════════
 
-static void cmdShowConsole()        { notImplemented("Show Console"); }
+static uint64_t sConsolePanelHandle = 0;
+static NSView  *sConsoleView = nil;
+
+static bool consoleShown() {
+    return sConsoleView && sConsoleView.window != nil && !sConsoleView.hiddenOrHasHiddenAncestor;
+}
+
+static void cmdShowConsole() {
+    if (!sConsoleView) {
+        sConsoleView = luaConsoleCreate(&nppData, sExtensionAPI);
+        if (!sConsoleView) { notImplemented("Show Console (ScintillaView unavailable)"); return; }
+        // Keep the menu checkmark honest however the panel is hidden (menu
+        // toggle, title-bar close button, dock/undock) — Windows DMN_CLOSE parity.
+        luaConsoleSetVisibilityCallback(^(bool visible) {
+            npp(NPPM_SETMENUITEMCHECK, (uintptr_t)funcItem[0]._cmdID, visible ? 1 : 0);
+        });
+        luaConsoleBanner();
+    }
+    if (sConsolePanelHandle == 0) {
+        intptr_t h = npp(NPPM_DMM_REGISTERPANEL,
+                         (uintptr_t)(__bridge void *)sConsoleView,
+                         (intptr_t)"LuaScript");
+        if (h > 0) sConsolePanelHandle = (uint64_t)h;
+    }
+    if (sConsolePanelHandle == 0) { notImplemented("Show Console (docking unavailable)"); return; }
+    bool show = !consoleShown();
+    npp(show ? NPPM_DMM_SHOWPANEL : NPPM_DMM_HIDEPANEL, (uintptr_t)sConsolePanelHandle, 0);
+}
 static void cmdEditStartupScript()  { notImplemented("Edit Startup Script"); }
 static void cmdExecuteCurrentFile() {
     // Windows parity: executes the file ON DISK of the active document.
@@ -140,6 +168,10 @@ extern "C" NPP_EXPORT FuncItem *getFuncsArray(int *nbF) {
 extern "C" NPP_EXPORT void beNotified(SCNotification *n) {
     switch (n->nmhdr.code) {
         case NPPN_SHUTDOWN:
+            if (sConsolePanelHandle > 0) {
+                npp(NPPM_DMM_UNREGISTERPANEL, (uintptr_t)sConsolePanelHandle, 0);
+                sConsolePanelHandle = 0;
+            }
             break;
         default:
             break;
