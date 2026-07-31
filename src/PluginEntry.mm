@@ -27,6 +27,12 @@ extern "C" {
 #include "LuaConsolePanel.h"
 #include "StyleWriter.h"
 #include "NppLuaScript.h"
+#include "SciLexer.h"
+
+// LangType index of L_LUA in Notepad_plus_msgs.h (the vendored header clashes
+// with NppPluginInterfaceMac.h typedefs, so mirror just this one value — the
+// enum order is ABI-frozen upstream).
+static const int kLangLua = 23;
 
 static NppExtensionAPI *sExtensionAPI = nullptr;
 extern "C" void GUIMacInit(const NppData *nppData);
@@ -370,10 +376,22 @@ extern "C" NPP_EXPORT void beNotified(SCNotification *n) {
                 sConsolePanelHandle = 0;
             }
             break;
-        case NPPN_BUFFERACTIVATED:
+        case NPPN_BUFFERACTIVATED: {
             npp(NPPM_GETFULLPATHFROMBUFFERID, nh.idFrom, (intptr_t)fname);
+            // If opening the startup.lua file add the constants to a keyword
+            // list (Windows parity: bolds the Sci/Npp defines while editing).
+            char configDir[1024] = {0};
+            npp(NPPM_GETPLUGINSCONFIGDIR, sizeof(configDir), (intptr_t)configDir);
+            if (npp(NPPM_GETBUFFERLANGTYPE, nh.idFrom) == kLangLua &&
+                strncasecmp(fname, configDir, strlen(configDir)) == 0) {
+                sciSend(SCI_SETKEYWORDS, 4, (sptr_t)luaConsoleGlobalConstants());
+                sciSend(SCI_STYLESETFORE, SCE_LUA_WORD5,
+                        sciSend(SCI_STYLEGETFORE, SCE_LUA_PREPROCESSOR));
+                sciSend(SCI_STYLESETBOLD, SCE_LUA_WORD5, true);
+            }
             ext.OnSwitchFile(fname, nh.idFrom);
             break;
+        }
         case NPPN_LANGCHANGED:         ext.OnLangChange(); break;
         case NPPN_FILEBEFORELOAD:      ext.OnFileBeforeLoad(); break;
         case NPPN_FILELOADFAILED:      ext.OnFileLoadFailed(); break;

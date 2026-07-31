@@ -8,6 +8,7 @@ set(CMAKE_OSX_ARCHITECTURES "arm64;x86_64")
 
 set(NPP_MACOS_DIR "${CMAKE_SOURCE_DIR}/../../notepad-plus-plus-macos")
 set(SCINTILLA_INCLUDE "${NPP_MACOS_DIR}/scintilla/include")
+set(LEXILLA_INCLUDE "${NPP_MACOS_DIR}/lexilla/include")
 set(NPP_PLUGIN_INCLUDE "${NPP_MACOS_DIR}/src")
 
 # Vanilla Lua 5.3.5, vendored from the Windows plugin (src/lua) — library
@@ -17,6 +18,7 @@ file(GLOB LUA_SOURCES ${CMAKE_SOURCE_DIR}/src/lua/src/*.c)
 add_library(LuaScript SHARED
     src/PluginEntry.mm
     src/LuaConsolePanel.mm
+    src/LuaConsoleLogic.cpp
     src/GUIMac.mm
     src/NppExtensionAPI.mm
     src/SciTE/LuaExtension.cpp
@@ -31,6 +33,7 @@ add_library(LuaScript SHARED
 target_include_directories(LuaScript PRIVATE
     ${NPP_PLUGIN_INCLUDE}
     ${SCINTILLA_INCLUDE}
+    ${LEXILLA_INCLUDE}
     src
     src/Npp
     src/SciTE

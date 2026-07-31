@@ -14,9 +14,11 @@
 #import <Cocoa/Cocoa.h>
 #include "LuaConsolePanel.h"
 #include "LuaExtension.h"
+#include "LuaConsoleLogic.h"
 #include "Scintilla.h"
 #include <string>
 #include <vector>
+#include <algorithm>
 
 extern "C" {
 #include "lua.h"   // LUA_COPYRIGHT
@@ -29,6 +31,9 @@ extern "C" {
 static NSView *sPanel = nil;
 static id      sOut = nil;      // ScintillaView (output)
 static id      sIn  = nil;      // ScintillaView (input)
+static LuaConsole *sLogic = nullptr;              // vendored console smarts
+static GUI::ScintillaWindow sWinOut, sWinIn;      // GUI wrappers over the views
+static NSLayoutConstraint *sInputHeight = nil;
 static id      sKeyMonitor = nil;
 static std::vector<std::string> sHistory;
 static size_t  sHistoryPos = 0;
@@ -79,6 +84,15 @@ public:
 static MacConsoleSink sSink;
 
 LuaConsoleSink *luaConsoleSink(void) { return &sSink; }
+
+const char *luaConsoleGlobalConstants(void) {
+    static std::string cached;
+    if (cached.empty()) {
+        if (!sLogic) sLogic = new LuaConsole();
+        cached = sLogic->getGlobalConstants();
+    }
+    return cached.c_str();
+}
 
 void luaConsoleFocusInput(void) {
     if (sIn && [sIn window])
@@ -163,6 +177,33 @@ void luaConsoleSetVisibilityCallback(void (^cb)(bool visible)) {
 - (void)viewDidMoveToWindow { [super viewDidMoveToWindow]; [self reportVisibility]; }
 @end
 
+@interface LuaConsoleInputDelegate : NSObject
+- (void)notification:(SCNotification *)scn;
+@end
+@implementation LuaConsoleInputDelegate
+- (void)notification:(SCNotification *)scn {
+    if (sLogic) sLogic->processNotification(scn);
+    if (scn->nmhdr.code == SCN_MODIFIED &&
+        (scn->modificationType & (SC_MOD_INSERTTEXT | SC_MOD_DELETETEXT))) {
+        if (scn->linesAdded != 0) {
+            // Windows parity: the input grows with its content, up to 8 lines.
+            sptr_t lines = std::min<sptr_t>(inSend(SCI_GETLINECOUNT), 8);
+            sptr_t lineH = inSend(SCI_TEXTHEIGHT, 1);
+            if (sInputHeight) sInputHeight.constant = lines * lineH + 6;
+            outSend(SCI_DOCUMENTEND);
+        }
+        // Not the most efficient way but by far the easiest to do it here
+        // (ConsoleDialog.cpp) — every input line carries the '>' prompt.
+        sptr_t endLine = inSend(SCI_GETLINECOUNT);
+        for (sptr_t i = 0; i < endLine; ++i) {
+            inSend(SCI_MARGINSETTEXT, i, (sptr_t)">");
+            inSend(SCI_MARGINSETSTYLE, i, STYLE_LINENUMBER);
+        }
+    }
+}
+@end
+static LuaConsoleInputDelegate *sInputDelegate = nil;
+
 @interface LuaConsoleRunTarget : NSObject
 - (void)runClicked:(id)sender;
 @end
@@ -189,23 +230,27 @@ NSView *luaConsoleCreate(const NppData *nppData, NppExtensionAPI *api) {
     sIn  = makeSciView();
     if (!sOut || !sIn) return nil;
 
-    // Output: read-only, no line-number margin, text margin for '>' echoes,
-    // error style 39 red (Windows BGR value kept — Scintilla colors are BGR).
-    outSend(SCI_SETMARGINWIDTHN, 0, 0);
-    outSend(SCI_SETMARGINWIDTHN, 1, 16);
-    outSend(SCI_SETMARGINTYPEN, 1, SC_MARGIN_TEXT);
-    outSend(SCI_SETMARGINWIDTHN, 2, 0);
-    outSend(SCI_STYLESETFORE, 39, 0x0000FF);
-    outSend(SCI_SETREADONLY, 1);
-    outSend(SCI_SETWRAPMODE, SC_WRAP_WORD);
+    // Windows-parity console setup (vendored LuaConsole logic): Lua lexing +
+    // styles + keywords + autocomplete config on the input, plain read-only
+    // output. Style 39 = red error text (set after setStyles' STYLECLEARALL).
+    sWinOut.SetID((GUI::WindowID)(__bridge void *)sOut);
+    sWinIn.SetID((GUI::WindowID)(__bridge void *)sIn);
+    if (!sLogic) sLogic = new LuaConsole();
+    sLogic->setupOutput(sWinOut);
+    sLogic->setupInput(sWinIn);
+    outSend(SCI_STYLESETFORE, 39, 0x0000FF); // Red error message (BGR)
 
-    // Input: single visible line, '>' prompt margin, no line numbers.
-    inSend(SCI_SETMARGINWIDTHN, 0, 0);
-    inSend(SCI_SETMARGINWIDTHN, 1, 16);
+    // '>' prompt margins (margin 1, text type, width from the glyph).
+    sptr_t promptW = outSend(SCI_TEXTWIDTH, STYLE_DEFAULT, (sptr_t)">") * 2;
+    outSend(SCI_SETMARGINTYPEN, 1, SC_MARGIN_TEXT);
+    outSend(SCI_SETMARGINWIDTHN, 1, promptW);
     inSend(SCI_SETMARGINTYPEN, 1, SC_MARGIN_TEXT);
-    inSend(SCI_SETMARGINWIDTHN, 2, 0);
+    inSend(SCI_SETMARGINWIDTHN, 1, promptW);
     inSend(SCI_SETHSCROLLBAR, 0);
     inputPrompt();
+
+    sInputDelegate = [LuaConsoleInputDelegate new];
+    [sIn performSelector:@selector(setDelegate:) withObject:sInputDelegate];
 
     sRunTarget = [LuaConsoleRunTarget new];
     NSButton *run = [NSButton buttonWithTitle:@"Run" target:sRunTarget
@@ -225,7 +270,7 @@ NSView *luaConsoleCreate(const NppData *nppData, NppExtensionAPI *api) {
         [[sIn topAnchor] constraintEqualToAnchor:[sOut bottomAnchor] constant:2],
         [[sIn leadingAnchor] constraintEqualToAnchor:sPanel.leadingAnchor],
         [[sIn trailingAnchor] constraintEqualToAnchor:run.leadingAnchor constant:-4],
-        [[sIn heightAnchor] constraintEqualToConstant:23],
+        (sInputHeight = [[sIn heightAnchor] constraintEqualToConstant:23]),
         [[sIn bottomAnchor] constraintEqualToAnchor:sPanel.bottomAnchor constant:-2],
         [run.trailingAnchor constraintEqualToAnchor:sPanel.trailingAnchor constant:-4],
         [run.centerYAnchor constraintEqualToAnchor:[sIn centerYAnchor]],
@@ -238,6 +283,8 @@ NSView *luaConsoleCreate(const NppData *nppData, NppExtensionAPI *api) {
         NSView *fr = (NSView *)[[sIn window] firstResponder];
         if (![fr isKindOfClass:[NSView class]] || ![fr isDescendantOf:(NSView *)sIn])
             return ev;
+        if (inSend(SCI_AUTOCACTIVE))
+            return ev;   // the autocompletion list owns Return/Up/Down
         switch (ev.keyCode) {
             case 36:   // Return
                 if (ev.modifierFlags & NSEventModifierFlagShift) return ev;

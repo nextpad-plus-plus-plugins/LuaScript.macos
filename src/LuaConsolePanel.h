@@ -15,3 +15,6 @@ void luaConsoleBanner(void);
 void luaConsoleSetVisibilityCallback(void (^cb)(bool visible));
 /// Move keyboard focus into the console's input line (no-op if not shown).
 void luaConsoleFocusInput(void);
+/// Space-joined Sci+Npp constant names (for keyword styling of startup.lua).
+/// Safe before the panel exists — instantiates the console logic on demand.
+const char *luaConsoleGlobalConstants(void);
