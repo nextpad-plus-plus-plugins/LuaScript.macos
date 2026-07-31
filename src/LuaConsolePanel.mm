@@ -26,6 +26,7 @@ extern "C" {
 
 @interface NSObject (NppSciView)
 - (sptr_t)message:(unsigned int)msg wParam:(uptr_t)wParam lParam:(sptr_t)lParam;
+- (NSScrollView *)scrollView;
 @end
 
 static NSView *sPanel = nil;
@@ -42,6 +43,17 @@ static bool    sBannerShown = false;
 // held here and flushed on creation — the Windows console dialog exists from
 // setInfo on, ours is created lazily.
 static std::vector<std::pair<int, std::string>> sPending;
+
+// Match the host editor's scroller treatment (EditorView.mm): legacy style
+// with auto-hide, re-applied whenever the system resets it.
+static void applyScrollerStyle(void) {
+    for (id v in @[ sOut ?: (id)NSNull.null, sIn ?: (id)NSNull.null ]) {
+        if (![v respondsToSelector:@selector(scrollView)]) continue;
+        NSScrollView *sv = [v scrollView];
+        sv.scrollerStyle = NSScrollerStyleLegacy;
+        sv.autohidesScrollers = YES;
+    }
+}
 
 static sptr_t outSend(unsigned int m, uptr_t w = 0, sptr_t l = 0) {
     return [sOut message:m wParam:w lParam:l];
@@ -174,7 +186,12 @@ void luaConsoleSetVisibilityCallback(void (^cb)(bool visible)) {
 }
 - (void)viewDidHide { [super viewDidHide]; [self reportVisibility]; }
 - (void)viewDidUnhide { [super viewDidUnhide]; [self reportVisibility]; }
-- (void)viewDidMoveToWindow { [super viewDidMoveToWindow]; [self reportVisibility]; }
+- (void)viewDidMoveToWindow {
+    [super viewDidMoveToWindow];
+    [self reportVisibility];
+    // The system may reset scrollerStyle when the view enters a window.
+    if (self.window) applyScrollerStyle();
+}
 @end
 
 @interface LuaConsoleInputDelegate : NSObject
@@ -239,6 +256,14 @@ NSView *luaConsoleCreate(const NppData *nppData, NppExtensionAPI *api) {
     sLogic->setupOutput(sWinOut);
     sLogic->setupInput(sWinIn);
     outSend(SCI_STYLESETFORE, 39, 0x0000FF); // Red error message (BGR)
+
+    // Chrome: output wraps (no horizontal bar or corner square), the input
+    // never shows its own scrollers, and both use the host editor's
+    // auto-hiding legacy scroller style.
+    outSend(SCI_SETWRAPMODE, SC_WRAP_WORD);
+    outSend(SCI_SETHSCROLLBAR, 0);
+    inSend(SCI_SETVSCROLLBAR, 0);
+    applyScrollerStyle();
 
     // '>' prompt margins (margin 1, text type, width from the glyph).
     sptr_t promptW = outSend(SCI_TEXTWIDTH, STYLE_DEFAULT, (sptr_t)">") * 2;
