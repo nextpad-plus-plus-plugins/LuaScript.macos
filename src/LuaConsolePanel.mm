@@ -55,6 +55,10 @@ static void applyScrollerStyle(void) {
     }
 }
 
+// Prompt glyph: small filled triangle (U+25B8) instead of Windows' '>' —
+// same footprint, nicer look. Margin text is UTF-8 (SC_CP_UTF8).
+static const char *kPrompt = "\xE2\x96\xB8";
+
 static sptr_t outSend(unsigned int m, uptr_t w = 0, sptr_t l = 0) {
     return [sOut message:m wParam:w lParam:l];
 }
@@ -121,7 +125,7 @@ void luaConsoleBanner(void) {
 // ── Input actions ───────────────────────────────────────────────────────────
 
 static void inputPrompt(void) {
-    inSend(SCI_MARGINSETTEXT, 0, (sptr_t)">");
+    inSend(SCI_MARGINSETTEXT, 0, (sptr_t)kPrompt);
     inSend(SCI_MARGINSETSTYLE, 0, STYLE_LINENUMBER);
 }
 
@@ -145,7 +149,7 @@ static void runStatement(void) {
     appendStyled("\r\n", 2, 0);
     sptr_t newLast = outSend(SCI_GETLINECOUNT);
     for (sptr_t i = prevLast; i < newLast; i++) {
-        outSend(SCI_MARGINSETTEXT, i - 1, (sptr_t)">");
+        outSend(SCI_MARGINSETTEXT, i - 1, (sptr_t)kPrompt);
         outSend(SCI_MARGINSETSTYLE, i - 1, STYLE_LINENUMBER);
     }
 
@@ -213,7 +217,7 @@ void luaConsoleSetVisibilityCallback(void (^cb)(bool visible)) {
         // (ConsoleDialog.cpp) — every input line carries the '>' prompt.
         sptr_t endLine = inSend(SCI_GETLINECOUNT);
         for (sptr_t i = 0; i < endLine; ++i) {
-            inSend(SCI_MARGINSETTEXT, i, (sptr_t)">");
+            inSend(SCI_MARGINSETTEXT, i, (sptr_t)kPrompt);
             inSend(SCI_MARGINSETSTYLE, i, STYLE_LINENUMBER);
         }
     }
@@ -265,11 +269,16 @@ NSView *luaConsoleCreate(const NppData *nppData, NppExtensionAPI *api) {
     inSend(SCI_SETVSCROLLBAR, 0);
     applyScrollerStyle();
 
-    // '>' prompt margins (margin 1, text type, width from the glyph).
-    sptr_t promptW = outSend(SCI_TEXTWIDTH, STYLE_DEFAULT, (sptr_t)">") * 2;
-    outSend(SCI_SETMARGINTYPEN, 1, SC_MARGIN_TEXT);
+    // Prompt margins (margin 1, text type). The margin blends into the
+    // content background — no grey strip, no corner artifacts — and the
+    // triangle glyphs render in a muted grey.
+    for (id v in @[ sOut, sIn ]) {
+        [v message:SCI_STYLESETBACK wParam:STYLE_LINENUMBER lParam:0xFFFFFF];
+        [v message:SCI_STYLESETFORE wParam:STYLE_LINENUMBER lParam:0x9B9B9B];
+        [v message:SCI_SETMARGINTYPEN wParam:1 lParam:SC_MARGIN_TEXT];
+    }
+    sptr_t promptW = outSend(SCI_TEXTWIDTH, STYLE_LINENUMBER, (sptr_t)kPrompt) * 2;
     outSend(SCI_SETMARGINWIDTHN, 1, promptW);
-    inSend(SCI_SETMARGINTYPEN, 1, SC_MARGIN_TEXT);
     inSend(SCI_SETMARGINWIDTHN, 1, promptW);
     inSend(SCI_SETHSCROLLBAR, 0);
     inputPrompt();
