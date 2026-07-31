@@ -1080,7 +1080,7 @@ static int iface_function_helper(lua_State *L, const IFaceFunction &func) {
 	sptr_t params[2] = {0,0};
 
 	char *stringResult = 0;
-	wchar_t *wstringResult = 0;
+	GUI::gui_char *wstringResult = 0;   // TCHAR on Windows, UTF-8 char on macOS
 	tstring nppstrparams[2]; // 2 in case both params are tstrings
 	enum stringResultType { none, string, tstring } needStringResult = none;
 	int loopParamCount = 2;
@@ -1145,7 +1145,7 @@ static int iface_function_helper(lua_State *L, const IFaceFunction &func) {
 			// There aren't any Notepad++ messages currently that use iface_length
 			// so this would always report the length as MAX_PATH instead of the actual len
 			stringResultLen = MAX_PATH;
-			wstringResult = new wchar_t[stringResultLen];
+			wstringResult = new GUI::gui_char[stringResultLen];
 			params[1] = SptrFromPointer(wstringResult);
 		}
 		if (func.paramType[0] == iface_length) {
@@ -1717,7 +1717,7 @@ bool LuaExtension::RunString(const char *s, bool clearStack) {
 	return true;
 }
 
-bool LuaExtension::RunFile(const wchar_t *filename) {
+bool LuaExtension::RunFile(const GUI::gui_char *filename) {
 	std::ifstream filestream(filename, std::ios::in | std::ios::binary);
 	std::string buff;
 

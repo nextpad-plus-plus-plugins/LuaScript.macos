@@ -16,12 +16,23 @@ file(GLOB LUA_SOURCES ${CMAKE_SOURCE_DIR}/src/lua/src/*.c)
 
 add_library(LuaScript SHARED
     src/PluginEntry.mm
+    src/GUIMac.mm
+    src/NppExtensionAPI.mm
+    src/SciTE/LuaExtension.cpp
+    src/SciTE/IFaceTable.cpp
+    src/SciTE/StyleWriter.cpp
+    src/SciIFaceTable.cpp
+    src/NppIFaceTable.cpp
+    src/IFaceTableMixer.cpp
+    src/luawinfile/winfile_stub.c
     ${LUA_SOURCES}
 )
 target_include_directories(LuaScript PRIVATE
     ${NPP_PLUGIN_INCLUDE}
     ${SCINTILLA_INCLUDE}
     src
+    src/Npp
+    src/SciTE
     src/lua/src)
 target_compile_definitions(LuaScript PRIVATE LUA_USE_MACOSX)
 target_link_libraries(LuaScript PRIVATE

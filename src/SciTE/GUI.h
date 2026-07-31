@@ -131,10 +131,54 @@ struct ScintillaFailure {
 	}
 };
 
+#if defined(__APPLE__)
+// macOS port: never cache Scintilla direct pointers. The host's stable pane
+// handles route to whichever tab's ScintillaView is CURRENT (caching a direct
+// pointer would bind to one tab — the documented ComparePlus trap), and the
+// plugin's own console views are ObjC objects called directly. MacSciSend
+// (GUIMac.mm) discriminates and dispatches; failure semantics (SCI_GETSTATUS
+// check + ScintillaFailure throw) match the Windows implementation.
+sptr_t MacSciSend(WindowID wid, unsigned int msg, uptr_t wParam, sptr_t lParam);
+#endif
+
 class ScintillaWindow : public Window {
 	// Deleted so ScintillaWindow objects can not be copied
 	ScintillaWindow(const ScintillaWindow &source) = delete;
 	ScintillaWindow &operator=(const ScintillaWindow &) = delete;
+#if defined(__APPLE__)
+public:
+	sptr_t status;
+	ScintillaWindow() : status(0) {
+	}
+	void SetID(WindowID wid_) {
+		wid = wid_;
+	}
+	bool CanCall() const {
+		return wid != 0;
+	}
+	intptr_t Call(unsigned int msg, uptr_t wParam=0, sptr_t lParam=0) {
+		switch (msg) {
+		case SCI_CREATEDOCUMENT:
+		case SCI_CREATELOADER:
+		case SCI_PRIVATELEXERCALL:
+		case SCI_GETDIRECTFUNCTION:
+		case SCI_GETDIRECTPOINTER:
+		case SCI_GETDOCPOINTER:
+		case SCI_GETCHARACTERPOINTER:
+			throw ScintillaFailure(SC_STATUS_FAILURE);
+		}
+		if (!wid)
+			throw ScintillaFailure(SC_STATUS_FAILURE);
+		sptr_t retVal = MacSciSend(wid, msg, wParam, lParam);
+		status = MacSciSend(wid, SCI_GETSTATUS, 0, 0);
+		if (status > 0 && status < SC_STATUS_WARN_START)
+			throw ScintillaFailure(status);
+		return retVal;
+	}
+	sptr_t CallReturnPointer(unsigned int msg, uptr_t wParam=0, sptr_t lParam=0) {
+		return Call(msg, wParam, lParam);
+	}
+#else
 	SciFnDirect fn;
 	sptr_t ptr;
 public:
@@ -179,6 +223,7 @@ public:
 			throw ScintillaFailure(status);
 		return retVal;
 	}
+#endif
 	intptr_t CallPointer(unsigned int msg, uptr_t wParam, void *s) {
 		return Call(msg, wParam, reinterpret_cast<sptr_t>(s));
 	}

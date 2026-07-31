@@ -20,8 +20,11 @@
 #pragma once
 
 #include "NppExtensionAPI.h"
+#include "winport.h"   // macOS port shims (nbChar, timers, VK codes)
 
 #include <vector>
+
+class StyleWriter;   // macOS port: forward decl so includers need not pull StyleWriter.h
 
 struct LuaFuncItem {
 	char _itemName[nbChar];
@@ -46,7 +49,7 @@ public:
 
 	// Helper methods
 	bool RunString(const char *s, bool clearStack = true);
-	bool RunFile(const wchar_t *filename);
+	bool RunFile(const GUI::gui_char *filename);
 	bool OnExecute(const char *s);
 	std::vector<std::string> ExecuteAndReturnList(const char *s);
 	std::string ExecuteAndReturnString(const char * s);

@@ -19,6 +19,14 @@ extern "C" {
 #include "lualib.h"
 }
 
+#include "NppExtensionAPI.h"
+#include "LuaExtension.h"
+
+// Engine host bridge (phase 2). Console sink arrives with phase 3 — until
+// then Trace output falls back to stderr inside NppExtensionAPI.
+static NppExtensionAPI *sExtensionAPI = nullptr;
+extern "C" void GUIMacInit(const NppData *nppData);
+
 #define PLUGIN_NAME    "LuaScript"
 #define PLUGIN_VERSION "0.1.0"
 static const int NB_FUNC = 6;
@@ -46,7 +54,12 @@ static void notImplemented(const char *what) {
 
 static void cmdShowConsole()        { notImplemented("Show Console"); }
 static void cmdEditStartupScript()  { notImplemented("Edit Startup Script"); }
-static void cmdExecuteCurrentFile() { notImplemented("Execute Current File"); }
+static void cmdExecuteCurrentFile() {
+    // Windows parity: executes the file ON DISK of the active document.
+    char path[1024] = {0};
+    npp(NPPM_GETFULLCURRENTPATH, sizeof(path) - 1, (intptr_t)path);
+    if (path[0]) LuaExtension::Instance().RunFile(path);
+}
 
 static void cmdDocumentation() {
     // Same URL as the Windows plugin's Documentation menu item.
@@ -87,6 +100,12 @@ static void cmdAbout() {
 
 extern "C" NPP_EXPORT void setInfo(NppData data) {
     nppData = data;
+
+    // Initialise the Lua engine BEFORE the menu is built — Windows contract:
+    // startup.lua (phase 4) registers shortcuts that become menu items.
+    GUIMacInit(&nppData);
+    sExtensionAPI = new NppExtensionAPI(nullptr, &nppData);
+    LuaExtension::Instance().Initialise(sExtensionAPI);
 
     int idx = 0;
     auto addItem = [&](const char *name, PFUNCPLUGINCMD func) {
