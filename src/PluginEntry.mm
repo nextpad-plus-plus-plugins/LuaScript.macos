@@ -38,7 +38,7 @@ static NppExtensionAPI *sExtensionAPI = nullptr;
 extern "C" void GUIMacInit(const NppData *nppData);
 
 #define PLUGIN_NAME    "LuaScript"
-#define PLUGIN_VERSION "0.1.0"
+#define PLUGIN_VERSION "1.0.0"
 
 static NppData nppData;
 static std::vector<FuncItem> funcItems;
