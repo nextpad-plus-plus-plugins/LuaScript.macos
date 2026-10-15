@@ -38,7 +38,7 @@ static NppExtensionAPI *sExtensionAPI = nullptr;
 extern "C" void GUIMacInit(const NppData *nppData);
 
 #define PLUGIN_NAME    "LuaScript"
-#define PLUGIN_VERSION "1.0.0"
+#define PLUGIN_VERSION "1.0.1"
 
 static NppData nppData;
 static std::vector<FuncItem> funcItems;
@@ -91,6 +91,17 @@ static const char *getStartupScriptFilePath() {
 static uint64_t sConsolePanelHandle = 0;
 static NSView  *sConsoleView = nil;
 
+// NPPM_DMM_SETPANELINFO (host ≥ 1.1.0) — not yet present in this repo's
+// bundled NppPluginInterfaceMac.h; local copy matches the host header. On
+// older hosts the message returns 0 and is simply ignored.
+#ifndef NPPM_DMM_SETPANELINFO
+typedef struct NppPanelInfo {
+    const char *moduleName;   /* plugin folder/module name */
+    int32_t     cmdIndex;     /* FuncItem index of the show/toggle command */
+} NppPanelInfo;
+#define NPPM_DMM_SETPANELINFO (NPPMSG + 505)
+#endif
+
 static bool consoleShown() {
     return sConsoleView && sConsoleView.window != nil && !sConsoleView.hiddenOrHasHiddenAncestor;
 }
@@ -112,6 +123,15 @@ static bool consoleEnsureCreated() {
                          (uintptr_t)(__bridge void *)sConsoleView,
                          (intptr_t)"LuaScript");
         if (h > 0) sConsolePanelHandle = (uint64_t)h;
+        if (sConsolePanelHandle) {
+            // Declare restore metadata so a console visible at quit reopens
+            // at the next launch via "Show Console" (cmdIndex 0 — a plain
+            // toggle, no script execution).
+            NppPanelInfo info;
+            info.moduleName = "LuaScript";
+            info.cmdIndex   = 0;
+            npp(NPPM_DMM_SETPANELINFO, (uintptr_t)sConsolePanelHandle, (intptr_t)&info);
+        }
     }
     return sConsolePanelHandle != 0;
 }
